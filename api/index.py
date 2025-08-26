@@ -1,11 +1,18 @@
 import os
 import sys
+import logging
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 # Add the 'src' directory to the Python path to allow module imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -24,7 +31,12 @@ async def lifespan(app: FastAPI):
     yield
     shutdown_scheduler()
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="Vercel Whisper Transcriber",
+    description="A serverless web application for audio transcription using OpenAI's Whisper API",
+    version="0.1.0",
+    lifespan=lifespan
+)
 
 # Add state and exception handlers for rate limiting
 app.state.limiter = limiter
@@ -41,5 +53,8 @@ app.include_router(transcription_router)
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     """Serves the main user interface page."""
-    with open(os.path.join(static_dir, 'index.html')) as f:
-        return HTMLResponse(content=f.read())
+    try:
+        with open(os.path.join(static_dir, 'index.html')) as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>UI files not found</h1>", status_code=500)

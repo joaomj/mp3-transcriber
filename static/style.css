@@ -59,3 +59,21 @@ button:hover:not(:disabled) {
     margin-top: 20px;
     font-weight: 500;
 }
+
+/* Progress bar styles */
+.progress-container {
+    width: 100%;
+    background-color: #e0e0e0;
+    border-radius: 4px;
+    margin-top: 20px;
+}
+.progress-bar {
+    width: 0%;
+    height: 20px;
+    background-color: #007bff;
+    border-radius: 4px;
+    text-align: center;
+    line-height: 20px;
+    color: white;
+    transition: width 0.4s ease;
+}

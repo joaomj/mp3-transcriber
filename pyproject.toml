@@ -1,15 +1,18 @@
 [project]
 name = "audio-to-text"
 version = "0.1.0"
-description = "Default template for PDM package"
+description = "Serverless web application for audio transcription using OpenAI's Whisper API"
 authors = [
     {name = "Joao Marcos Visotaky Junior", email = "admin@palantirdatasolutions.com"},
 ]
-dependencies = ["fastapi>=0.116.1", "openai>=1.101.0", "slowapi>=0.1.9"]
-requires-python = "==3.12.*"
+dependencies = ["fastapi[standard]>=0.116.1", "openai>=1.101.0", "slowapi>=0.1.9", "apscheduler>=3.11.0"]
+requires-python = ">=3.9,<3.13"
 readme = "README.md"
 license = {text = "MIT"}
 
 
 [tool.pdm]
 distribution = false
+
+[tool.pdm.scripts]
+dev = "fastapi dev api/index.py"

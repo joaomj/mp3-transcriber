@@ -5,16 +5,39 @@ document.getElementById('transcription-form').addEventListener('submit', async f
     const formData = new FormData();
     const statusDiv = document.getElementById('status');
     const submitBtn = document.getElementById('submit-btn');
+    const progressContainer = document.getElementById('progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const apiKey = document.getElementById('api-key').value;
 
-    formData.append('api_key', document.getElementById('api-key').value);
+    // Reset UI elements
+    statusDiv.textContent = '';
+    progressContainer.style.display = 'none';
+    progressBar.style.width = '0%';
+    
+    // Validate API key
+    if (!apiKey.startsWith('sk-')) {
+        statusDiv.textContent = 'Error: Please provide a valid OpenAI API key (should start with "sk-").';
+        statusDiv.style.color = 'red';
+        return;
+    }
+    
     formData.append('language', document.getElementById('language').value);
 
     const files = document.getElementById('files').files;
+    
+    // Client-side validation for the file limit
+    if (files.length > 5) {
+        statusDiv.textContent = 'Error: You can only upload a maximum of 5 files at a time.';
+        statusDiv.style.color = 'red';
+        return;
+    }
+    
     if (files.length === 0) {
         statusDiv.textContent = 'Please select at least one MP3 file.';
         statusDiv.style.color = 'red';
         return;
     }
+
     for (const file of files) {
         formData.append('files', file);
     }
@@ -22,12 +45,31 @@ document.getElementById('transcription-form').addEventListener('submit', async f
     statusDiv.textContent = 'Uploading and processing... This may take a moment.';
     statusDiv.style.color = 'blue';
     submitBtn.disabled = true;
+    
+    // Display and animate the progress bar
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '50%'; // Initial animation to show activity
+
+    // Timeout implementation (3 minutes)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        controller.abort();
+    }, 180000); // 3 minutes
 
     try {
         const response = await fetch('/transcribe', {
             method: 'POST',
             body: formData,
+            headers: {
+                'Authorization': `Bearer ${apiKey}`
+            },
+            signal: controller.signal // Associate the AbortController with the request
         });
+
+        // Clear the timeout if the request completes in time
+        clearTimeout(timeoutId);
+
+        progressBar.style.width = '100%';
 
         if (response.ok) {
             const blob = await response.blob();
@@ -46,10 +88,16 @@ document.getElementById('transcription-form').addEventListener('submit', async f
             const error = await response.json();
             statusDiv.textContent = `Error: ${error.detail || 'An unknown error occurred.'}`;
             statusDiv.style.color = 'red';
+            progressContainer.style.display = 'none';
         }
     } catch (error) {
-        statusDiv.textContent = 'A network error occurred. Please try again.';
+        if (error.name === 'AbortError') {
+            statusDiv.textContent = 'Error: The request timed out after 3 minutes. Please try again with smaller files.';
+        } else {
+            statusDiv.textContent = 'A network error occurred. Please try again.';
+        }
         statusDiv.style.color = 'red';
+        progressContainer.style.display = 'none';
     } finally {
         submitBtn.disabled = false;
     }

@@ -4,74 +4,85 @@ A serverless web application designed for easy deployment on Vercel. This tool p
 
 ## **Features**
 
-* **Simple Web UI**: Clean and straightforward interface for uploading files.  
-* **User-Provided API Key**: Requires users to provide their own OpenAI API key for each session, ensuring keys are not stored on the server.  
-* **Multi-File Processing**: Upload and transcribe multiple MP3 files in a single batch.  
-* **Concurrent Transcriptions**: Processes all uploaded files asynchronously for faster results.  
-* **Language Selection**: Users must specify the audio language from a supported list.  
-* **Zipped Results**: All text transcriptions are conveniently packaged into a single .zip file for download.  
-* **Automatic File Cleanup**: All user-uploaded files and generated transcriptions are automatically deleted from the server after 5 minutes to ensure privacy.  
+* **Simple Web UI**: Clean and straightforward interface for uploading files.
+* **User-Provided API Key**: Requires users to provide their own OpenAI API key for each session, ensuring keys are not stored on the server. The API key is now sent securely in the Authorization header.
+* **Multi-File Processing**: Upload and transcribe multiple MP3 files in a single batch.
+* **Concurrent Transcriptions**: Processes all uploaded files asynchronously for faster results.
+* **Language Selection**: Users must specify the audio language from a supported list (English or Portuguese).
+* **Zipped Results**: All text transcriptions are conveniently packaged into a single .zip file for download.
+* **Automatic File Cleanup**: All user-uploaded files and generated transcriptions are automatically deleted from the server after 5 minutes to ensure privacy.
 * **Security**: Includes IP-based rate limiting to prevent abuse of the service.
+* **Enhanced Error Handling**: Comprehensive error handling for file validation, API errors, and server issues.
+* **File Size Limits**: Maximum file size limit of 100MB per file to prevent abuse.
 
 ## **Tech Stack**
 
-* **Backend**: FastAPI  
-* **Dependency Management**: PDM  
-* **Transcription Service**: OpenAI API (Whisper)  
-* **Deployment**: Vercel  
+* **Backend**: FastAPI
+* **Dependency Management**: PDM
+* **Transcription Service**: OpenAI API (Whisper)
+* **Deployment**: Vercel
 * **Background Tasks**: APScheduler
 
 ## **Project Structure**
 
 The project uses the src layout to separate the application's source code from project configuration files.
 
-/  
-|-- pyproject.toml         \# Project definition and dependencies  
-|-- vercel.json            \# Vercel deployment configuration  
-|-- api/  
-|   |-- index.py           \# Vercel's serverless entry point  
-|-- src/  
-|   |-- app/               \# Main application source code  
-|-- static/  
-|   |-- index.html         \# Frontend UI and assets
+```
+/
+|-- pyproject.toml         # Project definition and dependencies
+|-- vercel.json            # Vercel deployment configuration
+|-- api/
+|   |-- index.py           # Vercel's serverless entry point
+|-- src/
+|   |-- app/
+|       |-- __init__.py
+|       |-- security.py    # Rate limiting configuration
+|       |-- tasks.py       # Background tasks for file cleanup
+|       |-- transcription.py # Main transcription logic
+|-- static/
+|   |-- index.html         # Frontend UI
+|   |-- script.js          # Frontend JavaScript
+|   |-- style.css          # Frontend Styles
+```
+
+## **Security Improvements**
+
+1. **API Key Handling**: API keys are now sent in the Authorization header instead of form data, preventing them from being logged in server logs.
+2. **File Validation**: Enhanced file validation including MIME type, file extension, and size limits.
+3. **Rate Limiting**: IP-based rate limiting to prevent abuse.
+4. **Automatic Cleanup**: Files are automatically deleted after 5 minutes.
 
 ## **Setup and Local Development**
 
 Follow these steps to run the application on your local machine.
 
-### **1\. Prerequisites**
+### **1. Prerequisites**
 
-* Python 3.9+  
+* Python 3.12+
 * [PDM](https://pdm-project.org/latest/) installed on your system.
 
-### **2\. Clone the Repository**
+### **2. Clone the Repository**
 
-git clone \<your-repository-url\>  
-cd vercel-transcriber
+```bash
+git clone <your-repository-url>
+cd audio-to-text
+```
 
-### **3\. Install Dependencies**
+### **3. Install Dependencies**
 
 PDM will read the pyproject.toml file and install all required packages into a virtual environment.
 
+```bash
 pdm install
+```
 
-### **4\. Set Environment Variable**
-
-The application requires an OpenAI API key. Set it as an environment variable.
-
-**On macOS/Linux:**
-
-export OPENAI\_API\_KEY="sk-YourSecretKeyHere"
-
-**On Windows (Command Prompt):**
-
-$env:OPENAI\_API\_KEY="sk-YourSecretKeyHere"
-
-### **5\. Run the Development Server**
+### **4. Run the Development Server**
 
 Use the PDM script defined in pyproject.toml to start the local server.
 
+```bash
 pdm run dev
+```
 
 The application will now be available at http://127.0.0.1:8000.
 
@@ -79,7 +90,23 @@ The application will now be available at http://127.0.0.1:8000.
 
 This project is configured for seamless deployment to Vercel.
 
-1. **Push to a Git Repository**: Push your project code to a GitHub, GitLab, or Bitbucket repository.  
-2. **Create a Vercel Project**: In your Vercel dashboard, create a new project and link it to your Git repository.  
-3. **Configure Environment Variables**: In the Vercel project settings, navigate to "Environment Variables" and add your OPENAI\_API\_KEY. This is a critical step.  
-4. **Deploy**: Vercel will automatically detect the vercel.json file and deploy the application. Any push to the main branch will trigger a new deployment.
+1. **Push to a Git Repository**: Push your project code to a GitHub, GitLab, or Bitbucket repository.
+2. **Create a Vercel Project**: In your Vercel dashboard, create a new project and link it to your Git repository.
+3. **Deploy**: Vercel will automatically detect the vercel.json file and deploy the application. Any push to the main branch will trigger a new deployment.
+
+Note: This application does not require any environment variables to be set on Vercel. Each user provides their own OpenAI API key through the UI.
+
+## **API Usage**
+
+The application exposes a single endpoint for transcription:
+
+```
+POST /transcribe
+```
+
+Parameters:
+* `language` (form): The language of the audio files (en or pt)
+* `Authorization` (header): Bearer token with the OpenAI API key
+* `files` (form): Multiple MP3 files to transcribe
+
+The response will be a ZIP file containing text transcriptions for each audio file.

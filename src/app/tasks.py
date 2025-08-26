@@ -1,7 +1,11 @@
 import os
 import shutil
 import time
+import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Use Vercel's recommended temporary directory for serverless functions
 TEMP_DIR = "/tmp/transcriber_runs"
@@ -19,21 +23,30 @@ def cleanup_old_files():
     for dirname in os.listdir(TEMP_DIR):
         dirpath = os.path.join(TEMP_DIR, dirname)
         try:
-            if os.stat(dirpath).st_mtime < now - MAX_AGE_SECONDS:
-                shutil.rmtree(dirpath, ignore_errors=True)
-                print(f"Cleaned up old directory: {dirpath}")
+            # Check if it's a directory and get its modification time
+            if os.path.isdir(dirpath):
+                if os.stat(dirpath).st_mtime < now - MAX_AGE_SECONDS:
+                    shutil.rmtree(dirpath, ignore_errors=True)
+                    logger.info(f"Cleaned up old directory: {dirpath}")
         except FileNotFoundError:
             # This can happen if another process cleans the file between listdir and stat
             continue
+        except PermissionError as e:
+            logger.warning(f"Permission error when cleaning up {dirpath}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error when cleaning up {dirpath}: {e}")
 
 def start_scheduler():
     """Initializes the temporary directory and starts the cleanup scheduler."""
     os.makedirs(TEMP_DIR, exist_ok=True)
     scheduler.add_job(cleanup_old_files, 'interval', minutes=1)
     scheduler.start()
-    print("Cleanup scheduler started.")
+    logger.info("Cleanup scheduler started.")
 
 def shutdown_scheduler():
     """Shuts down the cleanup scheduler gracefully."""
-    scheduler.shutdown()
-    print("Cleanup scheduler stopped.")
+    try:
+        scheduler.shutdown()
+        logger.info("Cleanup scheduler stopped.")
+    except Exception as e:
+        logger.error(f"Error shutting down scheduler: {e}")
