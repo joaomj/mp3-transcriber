@@ -10,9 +10,88 @@ requires-python = ">=3.9,<3.13"
 readme = "README.md"
 license = {text = "MIT"}
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-asyncio>=1.1.0",
+    "httpx>=0.28.1",
+    "ruff>=0.12.10",
+    "bandit>=1.8.6",
+    "mypy>=1.17.1",
+]
+dev = [
+    "ruff>=0.12.10",
+    "mypy>=1.17.1",
+]
 
 [tool.pdm]
 distribution = false
 
 [tool.pdm.scripts]
 dev = "fastapi dev api/index.py"
+test = "python -m pytest tests/ -v"
+lint = "ruff check ."
+format = "ruff format ."
+type-check = "mypy src/ api/"
+security = "bandit -r src/ api/"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--verbose",
+    "--cov=src",
+    "--cov=api",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+extend-exclude = [
+    "__pycache__",
+    ".git",
+    ".venv",
+    "venv",
+    ".vscode",
+    ".idea",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # mccabe
+    "B",  # bugbear
+]
+extend-ignore = [
+    "E501",  # line too long, handled by formatter
+]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+exclude = [
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".git",
+]
+
+[tool.bandit]
+exclude_dirs = [
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".git",
+]

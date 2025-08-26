@@ -1,5 +1,7 @@
 # Misc
 QWEN.md
+.mypy_cache/
+.ruff_cache/
 
 
 # Python

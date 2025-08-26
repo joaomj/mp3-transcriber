@@ -31,6 +31,10 @@ The project uses the src layout to separate the application's source code from p
 /
 |-- pyproject.toml         # Project definition and dependencies
 |-- vercel.json            # Vercel deployment configuration
+|-- Makefile               # Commands for running tests and checks
+|-- run-checks.sh          # Script to run all tests and quality checks
+|-- docs/
+|   |-- tech-context.md    # Technical documentation and architecture
 |-- api/
 |   |-- index.py           # Vercel's serverless entry point
 |-- src/
@@ -43,6 +47,12 @@ The project uses the src layout to separate the application's source code from p
 |   |-- index.html         # Frontend UI
 |   |-- script.js          # Frontend JavaScript
 |   |-- style.css          # Frontend Styles
+|-- tests/
+|   |-- conftest.py        # Pytest configuration
+|   |-- test_api.py        # Tests for the main API
+|   |-- test_security.py   # Tests for the security module
+|   |-- test_tasks.py      # Tests for the tasks module
+|   |-- test_transcription.py # Tests for the transcription module
 ```
 
 ## **Security Improvements**
@@ -85,6 +95,52 @@ pdm run dev
 ```
 
 The application will now be available at http://127.0.0.1:8000.
+
+## **Testing and Quality Assurance**
+
+This project includes a comprehensive test suite and quality assurance system:
+
+### **Running Tests**
+
+You can run tests using either the Makefile or directly with PDM:
+
+```bash
+# Using Makefile
+make test
+
+# Using PDM directly
+pdm run test
+```
+
+### **Running Quality Checks**
+
+The project includes several quality checks:
+
+```bash
+# Run all checks at once
+make all-checks
+
+# Or run individual checks
+make lint        # Code linting (Ruff)
+make format      # Code formatting (Ruff)
+make type-check  # Type checking (MyPy)
+make security    # Security checks (Bandit)
+```
+
+### **Test Suite Overview**
+
+The test suite includes:
+* 23 unit tests covering all modules
+* API endpoint tests
+* Security validation
+* Error condition testing
+* Code quality checks (linting, formatting, type checking, security scanning)
+
+### **Quality Assurance Tools**
+* **Linting**: Ruff for code style and error checking
+* **Formatting**: Automatic code formatting with Ruff
+* **Type Checking**: MyPy for static type checking
+* **Security Scanning**: Bandit for security vulnerability detection
 
 ## **Deployment to Vercel**
 
