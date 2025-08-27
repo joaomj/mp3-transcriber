@@ -234,7 +234,7 @@ async def transcribe_file(client: OpenAI, file_path: str, language: str) -> str:
 
 async def process_files(
     files: List[UploadFile], run_path: str
-) -> Tuple[List[str], Dict[int, str], List[str]]:
+) -> Tuple[List[str], dict[int, str], List[str]]:
     """Process uploaded files and return saved files, output filenames, and validation errors."""
     logger.info(f"Processing {len(files)} files")
     validation_errors: List[str] = []
