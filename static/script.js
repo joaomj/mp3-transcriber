@@ -38,7 +38,13 @@ document.getElementById('transcription-form').addEventListener('submit', async f
         return;
     }
 
+    // Check file sizes (Vercel has a 100MB limit)
     for (const file of files) {
+        if (file.size > 100 * 1024 * 1024) {  // 100MB in bytes
+            statusDiv.textContent = `Error: File ${file.name} exceeds the 100MB limit. Please select a smaller file.`;
+            statusDiv.style.color = 'red';
+            return;
+        }
         formData.append('files', file);
     }
 
@@ -95,6 +101,7 @@ document.getElementById('transcription-form').addEventListener('submit', async f
             statusDiv.textContent = 'Error: The request timed out after 3 minutes. Please try again with smaller files.';
         } else {
             statusDiv.textContent = 'A network error occurred. Please try again.';
+            console.error('Network error:', error);
         }
         statusDiv.style.color = 'red';
         progressContainer.style.display = 'none';

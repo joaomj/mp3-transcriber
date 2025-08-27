@@ -1,36 +1,169 @@
+from typing import List, Optional, Tuple
+
+import aiofiles
 import asyncio
 import logging
 import os
 import uuid
-import zipfile
+from http import HTTPStatus
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
 
-from fastapi import (
-    APIRouter,
-    Form,
-    Header,
-    HTTPException,
-    Request,
-    UploadFile,
-    status,
-)
+import uvicorn
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from openai import APIConnectionError, APIError, AuthenticationError, OpenAI
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
-from .security import limiter
-from .tasks import TEMP_DIR
+from src.app.config import MAX_FILE_SIZE, TEMP_DIR
+
+# Initialize router and rate limiter
+router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 # Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-router = APIRouter()
-# Supported languages are now limited to English and Portuguese
-SUPPORTED_LANGUAGES = {"en": "English", "pt": "Portuguese"}
-# Defines the maximum file limit
-MAX_FILES_LIMIT = 5
-# Maximum file size (100MB)
-MAX_FILE_SIZE = 100 * 1024 * 1024
+
+def validate_request_data(
+    files: Optional[List[UploadFile]], language: str, authorization: Optional[str]
+) -> str:
+    """Validate request data and return API key if valid."""
+    logger.info("Validating request data")
+    if not files:
+        logger.error("No files provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No files provided. Please upload at least one MP3 file.",
+        )
+
+    if not language:
+        logger.error("No language provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Language parameter is required.",
+        )
+
+    if not authorization:
+        logger.error("No authorization header provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authorization header with Bearer token is required.",
+        )
+
+    if not authorization.startswith("Bearer "):
+        logger.error("Invalid authorization header format")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authorization header must start with 'Bearer '.",
+        )
+
+    api_key = authorization[7:]  # Remove "Bearer " prefix
+    if not api_key:
+        logger.error("Empty API key")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="API key is required.",
+        )
+
+    logger.info("Request data validated successfully")
+    return api_key
+
+
+def create_client(api_key: str) -> Tuple[Optional[OpenAI], Optional[str]]:
+    """Create OpenAI client and return it with any validation error."""
+    try:
+        client = OpenAI(api_key=api_key)
+        # Test if the API key is valid by accessing the property
+        _ = client.api_key
+        return client, None
+    except Exception as e:
+        return None, str(e)
+
+
+def validate_file(file: UploadFile) -> Optional[str]:
+    """Validate a single uploaded file and return an error message if invalid."""
+    logger.info(f"Validating file: {file.filename}")
+    
+    # Validate file extension first
+    if file.filename is not None:
+        file_extension = Path(file.filename).suffix.lower()
+        if file_extension not in [".mp3", ".mpeg"]:
+            error_msg = f"File {file.filename} has invalid extension: {file_extension}"
+            logger.warning(error_msg)
+            return error_msg
+    else:
+        error_msg = "File has no filename"
+        logger.warning(error_msg)
+        return error_msg
+
+    # Validate file type (be more permissive with MIME types for MP3 files)
+    if file.content_type not in ["audio/mpeg", "audio/mp3"]:
+        # If MIME type is not what we expect but extension is .mp3, we'll allow it
+        if file.filename and Path(file.filename).suffix.lower() == ".mp3":
+            logger.info(f"Accepting file with .mp3 extension despite MIME type: {file.content_type}")
+        else:
+            error_msg = f"File {file.filename} has invalid MIME type: {file.content_type}"
+            logger.warning(error_msg)
+            return error_msg
+
+    # Check file size
+    file.file.seek(0, os.SEEK_END)
+    file_size = file.file.tell()
+    file.file.seek(0)
+
+    if file_size > MAX_FILE_SIZE:
+        error_msg = f"File {file.filename} exceeds maximum size of {MAX_FILE_SIZE / (1024 * 1024)} MB"
+        logger.warning(error_msg)
+        return error_msg
+
+    if file.filename is None:
+        error_msg = "File has no filename"
+        logger.warning(error_msg)
+        return error_msg
+
+    logger.info(f"File {file.filename} passed validation")
+    return None
+
+
+async def save_file(
+    file: UploadFile, run_path: str, index: int
+) -> Tuple[Optional[str], Optional[Tuple[int, str]]]:
+    """Save a single uploaded file to disk and return file path and output filename."""
+    logger.info(f"Saving file {index}: {file.filename}")
+    
+    if file.filename is None:
+        logger.error("File has no filename")
+        return None, None
+
+    file_path = os.path.join(run_path, file.filename)
+    logger.info(f"Saving file to: {file_path}")
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            # Copy file in chunks to avoid memory issues
+            total_bytes = 0
+            while True:
+                chunk = await file.read(64 * 1024)  # 64KB chunks
+                if not chunk:
+                    break
+                buffer.write(chunk)
+                total_bytes += len(chunk)
+        
+        logger.info(f"File saved successfully: {file_path}, size: {total_bytes} bytes")
+        
+        if total_bytes == 0:
+            logger.error("Saved file is empty")
+            return None, None
+            
+        base_name = os.path.splitext(file.filename)[0]
+        output_filename = f"{base_name}.txt"
+
+        return file_path, (index, output_filename)
+    except Exception as e:
+        logger.error(f"Failed to save file {file.filename}: {e}")
+        return None, None
 
 
 async def transcribe_file(client: OpenAI, file_path: str, language: str) -> str:
@@ -99,157 +232,6 @@ async def transcribe_file(client: OpenAI, file_path: str, language: str) -> str:
         raise
 
 
-def validate_file(file: UploadFile) -> Optional[str]:
-    """Validate a single uploaded file and return an error message if invalid."""
-    logger.info(f"Validating file: {file.filename}")
-    
-    # Validate file extension first
-    if file.filename is not None:
-        file_extension = Path(file.filename).suffix.lower()
-        if file_extension not in [".mp3", ".mpeg"]:
-            error_msg = f"File {file.filename} has invalid extension: {file_extension}"
-            logger.warning(error_msg)
-            return error_msg
-    else:
-        error_msg = "File has no filename"
-        logger.warning(error_msg)
-        return error_msg
-
-    # Validate file type (be more permissive with MIME types for MP3 files)
-    if file.content_type not in ["audio/mpeg", "audio/mp3"]:
-        # If MIME type is not what we expect but extension is .mp3, we'll allow it
-        if file.filename and Path(file.filename).suffix.lower() == ".mp3":
-            logger.info(f"Accepting file with .mp3 extension despite MIME type: {file.content_type}")
-        else:
-            error_msg = f"File {file.filename} has invalid MIME type: {file.content_type}"
-            logger.warning(error_msg)
-            return error_msg
-
-    # Check file size
-    file.file.seek(0, os.SEEK_END)
-    file_size = file.file.tell()
-    file.file.seek(0)
-
-    if file_size > MAX_FILE_SIZE:
-        error_msg = f"File {file.filename} exceeds maximum size of {MAX_FILE_SIZE / (1024 * 1024)} MB"
-        logger.warning(error_msg)
-        return error_msg
-
-    if file.filename is None:
-        error_msg = "File has no filename"
-        logger.warning(error_msg)
-        return error_msg
-
-    logger.info(f"File {file.filename} passed validation")
-    return None
-
-
-def create_client(api_key: str) -> Tuple[Optional[OpenAI], Optional[str]]:
-    """Create OpenAI client and return it with any error message."""
-    client_creation_error = None
-    client = None
-    try:
-        client = OpenAI(api_key=api_key)
-    except Exception as e:
-        client_creation_error = str(e)
-
-    return client, client_creation_error
-
-
-async def save_file(
-    file: UploadFile, run_path: str, index: int
-) -> Tuple[Optional[str], Optional[Tuple[int, str]]]:
-    """Save a single uploaded file to disk and return file path and output filename."""
-    logger.info(f"Saving file {index}: {file.filename}")
-    
-    if file.filename is None:
-        logger.error("File has no filename")
-        return None, None
-
-    file_path = os.path.join(run_path, file.filename)
-    logger.info(f"Saving file to: {file_path}")
-    
-    try:
-        with open(file_path, "wb") as buffer:
-            # Copy file in chunks to avoid memory issues
-            total_bytes = 0
-            while True:
-                chunk = await file.read(64 * 1024)  # 64KB chunks
-                if not chunk:
-                    break
-                buffer.write(chunk)
-                total_bytes += len(chunk)
-        
-        logger.info(f"File saved successfully: {file_path}, size: {total_bytes} bytes")
-        
-        if total_bytes == 0:
-            logger.error("Saved file is empty")
-            return None, None
-            
-        base_name = os.path.splitext(file.filename)[0]
-        output_filename = f"{base_name}.txt"
-
-        return file_path, (index, output_filename)
-    except Exception as e:
-        logger.error(f"Failed to save file {file.filename}: {e}")
-        return None, None
-
-
-def create_zip_response(
-    results: List[Union[str, Exception]],
-    output_filenames: Dict[int, str],
-    run_path: str,
-) -> str:
-    """Create a zip file with transcription results and return its path."""
-    logger.info(f"Creating ZIP response with {len(results)} results")
-    zip_path = os.path.join(run_path, "transcriptions.zip")
-    
-    with zipfile.ZipFile(zip_path, "w") as zipf:
-        for i, result in enumerate(results):
-            logger.info(f"Processing result {i}: {type(result)}")
-            if isinstance(result, Exception):
-                logger.error(f"Transcription failed for file {i}: {result}")
-                # Add error information to the zip file
-                error_filename = f"error_{output_filenames.get(i, f'file_{i}.txt')}"
-                zipf.writestr(error_filename, f"Transcription failed: {str(result)}")
-            elif isinstance(result, str) and i in output_filenames:
-                txt_filename = output_filenames[i]
-                logger.info(f"Adding transcription for {txt_filename}: {len(result)} characters")
-                zipf.writestr(txt_filename, result.strip())
-            else:
-                logger.warning(f"Unexpected result type or missing filename for result {i}")
-
-    logger.info(f"ZIP file created at {zip_path}")
-    return zip_path
-
-
-def validate_request_data(
-    files: List[UploadFile], language: str, authorization: Optional[str]
-) -> str:
-    """Validate request data and return API key if valid."""
-    # Validate the file count limit
-    if len(files) > MAX_FILES_LIMIT:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"A maximum of {MAX_FILES_LIMIT} files can be processed at once.",
-        )
-
-    if language not in SUPPORTED_LANGUAGES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported language selected.",
-        )
-
-    # Extract API key from Authorization header
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="API key must be provided in the Authorization header as 'Bearer <api_key>'",
-        )
-
-    return authorization[7:]  # Remove "Bearer " prefix
-
-
 async def process_files(
     files: List[UploadFile], run_path: str
 ) -> Tuple[List[str], Dict[int, str], List[str]]:
@@ -282,27 +264,63 @@ async def process_files(
         )
 
     # Save files concurrently
-    save_results: List[
-        Union[Tuple[Optional[str], Optional[Tuple[int, str]]], BaseException]
-    ] = await asyncio.gather(*save_tasks, return_exceptions=True)  # type: ignore
+    if save_tasks:
+        logger.info("Saving files concurrently")
+        save_results = await asyncio.gather(*save_tasks, return_exceptions=True)
+        logger.info(f"Save results: {len(save_results)}")
 
-    # Process save results
-    saved_files: List[str] = []
-    output_filenames: Dict[int, str] = {}
-    for result in save_results:
-        if isinstance(result, Exception):
-            logger.error(f"Failed to save file: {result}")
-            continue
-        elif isinstance(result, tuple) and len(result) == 2:
+        # Process save results
+        saved_files: List[str] = []
+        output_filenames: Dict[int, str] = {}
+        for result in save_results:
+            if isinstance(result, Exception):
+                logger.error(f"File save error: {result}")
+                continue
             file_path, output_info = result
             if file_path and output_info:
-                index, filename = output_info
                 saved_files.append(file_path)
+                index, filename = output_info
                 output_filenames[index] = filename
+    else:
+        saved_files = []
+        output_filenames = {}
 
     logger.info(f"Saved files: {len(saved_files)}")
     logger.info(f"Output filenames: {output_filenames}")
     return saved_files, output_filenames, validation_errors
+
+
+def create_zip_response(
+    results: List[str], output_filenames: Dict[int, str], run_path: str
+) -> str:
+    """Create a ZIP file with transcription results and return its path."""
+    logger.info(f"Creating ZIP response with {len(results)} results")
+    import zipfile
+
+    zip_path = os.path.join(run_path, "transcriptions.zip")
+
+    with zipfile.ZipFile(zip_path, "w") as zip_file:
+        for index, result in enumerate(results):
+            logger.info(f"Processing result {index}: {type(result)}")
+            if isinstance(result, Exception):
+                # Handle exceptions in results
+                error_message = f"Error transcribing file: {str(result)}\n"
+                output_filename = output_filenames.get(index, f"error_{index}.txt")
+                zip_file.writestr(output_filename, error_message)
+            else:
+                # Handle successful transcriptions
+                output_filename = output_filenames.get(index, f"transcription_{index}.txt")
+                logger.info(f"Adding transcription for {output_filename}: {len(result) if result else 0} characters")
+                zip_file.writestr(output_filename, result or "")
+
+    logger.info(f"ZIP file created at {zip_path}")
+    return zip_path
+
+
+@router.options("/transcribe")
+async def transcribe_options():
+    """Handle CORS preflight requests"""
+    return {"message": "CORS preflight request accepted"}
 
 
 @router.post("/transcribe")
