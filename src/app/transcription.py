@@ -1,12 +1,10 @@
-from typing import List, Optional, Tuple
-
-import aiofiles
 import asyncio
 import logging
 import os
 import uuid
 from http import HTTPStatus
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 import uvicorn
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
@@ -141,19 +139,16 @@ async def save_file(
     logger.info(f"Saving file to: {file_path}")
     
     try:
+        # Read file content
+        content = await file.read()
+        
+        # Write file content to disk
         with open(file_path, "wb") as buffer:
-            # Copy file in chunks to avoid memory issues
-            total_bytes = 0
-            while True:
-                chunk = await file.read(64 * 1024)  # 64KB chunks
-                if not chunk:
-                    break
-                buffer.write(chunk)
-                total_bytes += len(chunk)
+            buffer.write(content)
         
-        logger.info(f"File saved successfully: {file_path}, size: {total_bytes} bytes")
+        logger.info(f"File saved successfully: {file_path}, size: {len(content)} bytes")
         
-        if total_bytes == 0:
+        if len(content) == 0:
             logger.error("Saved file is empty")
             return None, None
             
@@ -271,7 +266,7 @@ async def process_files(
 
         # Process save results
         saved_files: List[str] = []
-        output_filenames: Dict[int, str] = {}
+        output_filenames: dict[int, str] = {}
         for result in save_results:
             if isinstance(result, Exception):
                 logger.error(f"File save error: {result}")
@@ -291,7 +286,7 @@ async def process_files(
 
 
 def create_zip_response(
-    results: List[str], output_filenames: Dict[int, str], run_path: str
+    results: List[str], output_filenames: dict[int, str], run_path: str
 ) -> str:
     """Create a ZIP file with transcription results and return its path."""
     logger.info(f"Creating ZIP response with {len(results)} results")
