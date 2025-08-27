@@ -20,32 +20,19 @@
       "dest": "/static/$1"
     },
     {
+      "src": "/transcribe",
+      "dest": "/api/index.py",
+      "methods": ["POST", "OPTIONS"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Max-Age": "86400"
+      }
+    },
+    {
       "src": "/(.*)",
       "dest": "/api/index.py"
     }
-  ],
-  "headers": [
-    {
-      "source": "/transcribe",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "POST, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "Authorization, Content-Type"
-        },
-        {
-          "key": "Access-Control-Max-Age",
-          "value": "86400"
-        }
-      ]
-    }
-  ],
-  "regions": ["iad1"]
+  ]
 }
